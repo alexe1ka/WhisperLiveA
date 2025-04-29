@@ -148,6 +148,8 @@ class Client:
             message (str): The received message from the server.
 
         """
+        print(f"On message: {message}")
+
         message = json.loads(message)
 
         if self.uid != message.get("uid"):
@@ -298,7 +300,7 @@ class TranscriptionTeeClient:
         self.chunk = 4096
         self.format = pyaudio.paInt16
         self.channels = 1
-        self.rate = 16000
+        self.rate = 8000
         self.record_seconds = 60000
         self.save_output_recording = save_output_recording
         self.output_recording_filename = output_recording_filename
@@ -405,8 +407,9 @@ class TranscriptionTeeClient:
                     if data == b"":
                         break
 
-                    audio_array = self.bytes_to_float_array(data)
-                    self.multicast_packet(audio_array.tobytes())
+                    #audio_array = self.bytes_to_float_array(data)
+                    #self.multicast_packet(audio_array.tobytes())
+                    self.multicast_packet(data)
                     if self.mute_audio_playback:
                         time.sleep(chunk_duration)
                     else:

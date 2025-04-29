@@ -243,9 +243,12 @@ class TranscriptionServer:
             A numpy array containing the audio.
         """
         frame_data = websocket.recv()
+        #print(f'Recv frame {len(frame_data)}')
+
         if frame_data == b"END_OF_AUDIO":
             return False
-        return np.frombuffer(frame_data, dtype=np.float32)
+        return np.frombuffer(frame_data, dtype=np.int16).astype(np.float32) / 32768.0
+        #return np.frombuffer(frame_data, dtype=np.float32)
 
     def handle_new_connection(self, websocket, faster_whisper_custom_model_path,
                               whisper_tensorrt_path, trt_multilingual):
@@ -253,6 +256,7 @@ class TranscriptionServer:
             logging.info("New client connected")
             options = websocket.recv()
             options = json.loads(options)
+            logging.info(f"Received options: {options}")
 
             if self.client_manager is None:
                 max_clients = options.get('max_clients', 4)

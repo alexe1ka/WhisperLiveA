@@ -211,12 +211,15 @@ class ServeClientBase(object):
             segments (list): A list of transcription segments to be sent to the client.
         """
         try:
-            self.websocket.send(
-                json.dumps({
+            json_segment = json.dumps({
                     "uid": self.client_uid,
                     "segments": segments,
                 })
+            self.websocket.send(
+                json_segment
             )
+            print(f'Send {json_segment}')
+
         except Exception as e:
             logging.error(f"[ERROR]: Sending data to client: {e}")
 
