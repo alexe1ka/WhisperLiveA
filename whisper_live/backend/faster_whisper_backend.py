@@ -92,6 +92,7 @@ class ServeClientFasterWhisper(ServeClientBase):
                 }
             )
         )
+        logging.info("Send server Ready")
 
     def create_model(self, device):
         """
@@ -190,4 +191,5 @@ class ServeClientFasterWhisper(ServeClientBase):
             segments = self.prepare_segments(last_segment)
 
         if len(segments):
+            logging.info(f'Send segments: {segments}')
             self.send_transcription_to_client(segments)
