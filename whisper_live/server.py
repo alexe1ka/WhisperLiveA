@@ -1,17 +1,17 @@
+import functools
+import json
+import logging
 import os
 import time
-import threading
-import json
-import functools
-import logging
 from enum import Enum
 from typing import List, Optional
 
 import numpy as np
-from websockets.sync.server import serve
 from websockets.exceptions import ConnectionClosed
-from whisper_live.vad import VoiceActivityDetector
+from websockets.sync.server import serve
+
 from whisper_live.backend.base import ServeClientBase
+from whisper_live.vad import VoiceActivityDetector
 
 logging.basicConfig(level=logging.INFO)
 
@@ -137,13 +137,13 @@ class BackendType(Enum):
 
     def is_tensorrt(self) -> bool:
         return self == BackendType.TENSORRT
-    
+
     def is_openvino(self) -> bool:
         return self == BackendType.OPENVINO
 
 
 class TranscriptionServer:
-    #RATE = 16000
+    # RATE = 16000
 
     def __init__(self):
         self.client_manager = None
@@ -152,8 +152,8 @@ class TranscriptionServer:
         self.single_model = False
 
     def initialize_client(
-        self, websocket, options, faster_whisper_custom_model_path,
-        whisper_tensorrt_path, trt_multilingual
+            self, websocket, options, faster_whisper_custom_model_path,
+            whisper_tensorrt_path, trt_multilingual
     ):
         client: Optional[ServeClientBase] = None
 
@@ -180,7 +180,7 @@ class TranscriptionServer:
                                "Reverting to available backend: 'faster_whisper'"
                 }))
                 self.backend = BackendType.FASTER_WHISPER
-        
+
         if self.backend.is_openvino():
             try:
                 from whisper_live.backend.openvino_backend import ServeClientOpenVINO
@@ -201,7 +201,7 @@ class TranscriptionServer:
                     "uid": self.client_uid,
                     "status": "WARNING",
                     "message": "OpenVINO not supported on Server yet. "
-                                "Reverting to available backend: 'faster_whisper'"
+                               "Reverting to available backend: 'faster_whisper'"
                 }))
 
         try:
@@ -220,7 +220,7 @@ class TranscriptionServer:
                     vad_parameters=options.get("vad_parameters"),
                     use_vad=self.use_vad,
                     single_model=self.single_model,
-                    rate = options["rate"]
+                    rate=options["rate"]
                 )
 
                 logging.info("Running faster_whisper backend.")
@@ -247,12 +247,12 @@ class TranscriptionServer:
         rate = client.rate
         print(f'Sample rate: {rate}')
         frame_data = websocket.recv()
-        #print(f'Recv frame {len(frame_data)}')
+        # print(f'Recv frame {len(frame_data)}')
 
         if frame_data == b"END_OF_AUDIO":
             return False
         return np.frombuffer(frame_data, dtype=np.int16).astype(np.float32) / 32768.0
-        #return np.frombuffer(frame_data, dtype=np.float32)
+        # return np.frombuffer(frame_data, dtype=np.float32)
 
     def handle_new_connection(self, websocket, faster_whisper_custom_model_path,
                               whisper_tensorrt_path, trt_multilingual):
@@ -384,15 +384,15 @@ class TranscriptionServer:
         if not BackendType.is_valid(backend):
             raise ValueError(f"{backend} is not a valid backend type. Choose backend from {BackendType.valid_types()}")
         with serve(
-            functools.partial(
-                self.recv_audio,
-                backend=BackendType(backend),
-                faster_whisper_custom_model_path=faster_whisper_custom_model_path,
-                whisper_tensorrt_path=whisper_tensorrt_path,
-                trt_multilingual=trt_multilingual
-            ),
-            host,
-            port
+                functools.partial(
+                    self.recv_audio,
+                    backend=BackendType(backend),
+                    faster_whisper_custom_model_path=faster_whisper_custom_model_path,
+                    whisper_tensorrt_path=whisper_tensorrt_path,
+                    trt_multilingual=trt_multilingual
+                ),
+                host,
+                port
         ) as server:
             server.serve_forever()
 
@@ -422,7 +422,7 @@ class TranscriptionServer:
                 client = self.client_manager.get_client(websocket)
                 if not client.eos:
                     client.set_eos(True)
-                time.sleep(0.1)    # Sleep 100m; wait some voice activity.
+                time.sleep(0.1)  # Sleep 100m; wait some voice activity.
             return False
         return True
 
@@ -435,4 +435,3 @@ class TranscriptionServer:
         """
         if self.client_manager.get_client(websocket):
             self.client_manager.remove_client(websocket)
-

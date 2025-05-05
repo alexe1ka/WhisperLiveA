@@ -2,6 +2,7 @@ import json
 import logging
 import threading
 import time
+
 import numpy as np
 
 
@@ -58,7 +59,7 @@ class ServeClientBase(object):
 
             input_bytes, duration = self.get_audio_chunk_for_processing()
             if duration < 1.0:
-                time.sleep(0.1)     # wait for audio chunks to arrive
+                time.sleep(0.1)  # wait for audio chunks to arrive
                 continue
             try:
                 input_sample = input_bytes.copy()
@@ -66,7 +67,7 @@ class ServeClientBase(object):
 
                 if result is None or self.language is None:
                     self.timestamp_offset += duration
-                    time.sleep(0.25)    # wait for voice activity, result is None when no voice activity
+                    time.sleep(0.25)  # wait for voice activity, result is None when no voice activity
                     continue
                 self.handle_transcription_output(result, duration)
 
@@ -79,7 +80,7 @@ class ServeClientBase(object):
 
     def handle_transcription_output(self, result, duration):
         raise NotImplementedError
-    
+
     def format_segment(self, start, end, text, completed=False):
         """
         Formats a transcription segment with precise start and end times alongside the transcribed text.
@@ -118,9 +119,9 @@ class ServeClientBase(object):
 
         """
         self.lock.acquire()
-        if self.frames_np is not None and self.frames_np.shape[0] > 45*self.RATE:
+        if self.frames_np is not None and self.frames_np.shape[0] > 45 * self.RATE:
             self.frames_offset += 30.0
-            self.frames_np = self.frames_np[int(30*self.RATE):]
+            self.frames_np = self.frames_np[int(30 * self.RATE):]
             # check timestamp offset(should be >= self.frame_offset)
             # this basically means that there is no speech as timestamp offset hasnt updated
             # and is less than frame_offset
@@ -139,7 +140,7 @@ class ServeClientBase(object):
         no valid segment for the last 30 seconds from whisper
         """
         with self.lock:
-            if self.frames_np[int((self.timestamp_offset - self.frames_offset)*self.RATE):].shape[0] > 25 * self.RATE:
+            if self.frames_np[int((self.timestamp_offset - self.frames_offset) * self.RATE):].shape[0] > 25 * self.RATE:
                 duration = self.frames_np.shape[0] / self.RATE
                 self.timestamp_offset = self.frames_offset + duration - 5
 
@@ -212,9 +213,9 @@ class ServeClientBase(object):
         """
         try:
             json_segment = json.dumps({
-                    "uid": self.client_uid,
-                    "segments": segments,
-                })
+                "uid": self.client_uid,
+                "segments": segments,
+            })
             self.websocket.send(
                 json_segment
             )
@@ -247,7 +248,7 @@ class ServeClientBase(object):
         """
         logging.info("Cleaning up.")
         self.exit = True
-    
+
     def get_segment_no_speech_prob(self, segment):
         return getattr(segment, "no_speech_prob", 0)
 

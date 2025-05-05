@@ -38,6 +38,7 @@ if __name__ == "__main__":
         os.environ["OMP_NUM_THREADS"] = str(args.omp_num_threads)
 
     from whisper_live.server import TranscriptionServer
+
     server = TranscriptionServer()
     server.run(
         "0.0.0.0",

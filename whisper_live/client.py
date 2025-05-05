@@ -578,8 +578,8 @@ class TranscriptionTeeClient:
                 data = self.stream.read(self.chunk, exception_on_overflow=False)
                 self.frames += data
 
-                #audio_array = self.bytes_to_float_array(data)
-                #self.multicast_packet(audio_array.tobytes())
+                # audio_array = self.bytes_to_float_array(data)
+                # self.multicast_packet(audio_array.tobytes())
                 self.multicast_packet(data)
 
                 # save frames if more than a minute

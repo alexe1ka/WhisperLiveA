@@ -1,20 +1,19 @@
 import json
 import logging
 import threading
-import time
+
 import torch
 
-from whisper_live.transcriber.transcriber_faster_whisper import WhisperModel
 from whisper_live.backend.base import ServeClientBase
+from whisper_live.transcriber.transcriber_faster_whisper import WhisperModel
 
 
 class ServeClientFasterWhisper(ServeClientBase):
-
     SINGLE_MODEL = None
     SINGLE_MODEL_LOCK = threading.Lock()
 
     def __init__(self, websocket, task="transcribe", device=None, language=None, client_uid=None, model="small.en",
-                 initial_prompt=None, vad_parameters=None, use_vad=True, single_model=False,rate = 8000):
+                 initial_prompt=None, vad_parameters=None, use_vad=True, single_model=False, rate=8000):
         """
         Initialize a ServeClient instance.
         The Whisper model is initialized based on the client's language and device availability.
@@ -59,7 +58,7 @@ class ServeClientFasterWhisper(ServeClientBase):
         if self.model_size_or_path is None:
             return
         logging.info(f"Using Device={device} with precision {self.compute_type}")
-    
+
         try:
             if single_model:
                 if ServeClientFasterWhisper.SINGLE_MODEL is None:
