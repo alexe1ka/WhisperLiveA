@@ -143,7 +143,7 @@ class BackendType(Enum):
 
 
 class TranscriptionServer:
-    RATE = 16000
+    #RATE = 16000
 
     def __init__(self):
         self.client_manager = None
@@ -220,6 +220,7 @@ class TranscriptionServer:
                     vad_parameters=options.get("vad_parameters"),
                     use_vad=self.use_vad,
                     single_model=self.single_model,
+                    rate = options["rate"]
                 )
 
                 logging.info("Running faster_whisper backend.")
@@ -242,6 +243,9 @@ class TranscriptionServer:
         Returns:
             A numpy array containing the audio.
         """
+        client = self.client_manager.get_client(websocket)
+        rate = client.rate
+        print(f'Sample rate: {rate}')
         frame_data = websocket.recv()
         #print(f'Recv frame {len(frame_data)}')
 

@@ -1,16 +1,16 @@
+import json
 import os
 import shutil
+import threading
+import time
+import uuid
 import wave
 
-import logging
+import av
 import numpy as np
 import pyaudio
-import threading
-import json
 import websocket
-import uuid
-import time
-import av
+
 import whisper_live.utils as utils
 
 
@@ -22,17 +22,18 @@ class Client:
     END_OF_AUDIO = "END_OF_AUDIO"
 
     def __init__(
-        self,
-        host=None,
-        port=None,
-        lang=None,
-        translate=False,
-        model="small",
-        srt_file_path="output.srt",
-        use_vad=True,
-        log_transcription=True,
-        max_clients=4,
-        max_connection_time=600,
+            self,
+            host=None,
+            port=None,
+            lang=None,
+            translate=False,
+            model="small",
+            srt_file_path="output.srt",
+            use_vad=True,
+            log_transcription=True,
+            max_clients=4,
+            max_connection_time=600,
+            rate=8000
     ):
         """
         Initializes a Client instance for audio recording and streaming to a server.
@@ -69,6 +70,7 @@ class Client:
         self.log_transcription = log_transcription
         self.max_clients = max_clients
         self.max_connection_time = max_connection_time
+        self.rate = rate
 
         if translate:
             self.task = "translate"
@@ -122,7 +124,7 @@ class Client:
                     self.last_segment = seg
                 elif (self.server_backend == "faster_whisper" and seg.get("completed", False) and
                       (not self.transcript or
-                        float(seg['start']) >= float(self.transcript[-1]['end']))):
+                       float(seg['start']) >= float(self.transcript[-1]['end']))):
                     self.transcript.append(seg)
         # update last received segment and last valid response time
         if self.last_received_segment is None or self.last_received_segment != segments[-1]["text"]:
@@ -214,6 +216,7 @@ class Client:
                     "use_vad": self.use_vad,
                     "max_clients": self.max_clients,
                     "max_connection_time": self.max_connection_time,
+                    "rate": self.rate
                 }
             )
         )
@@ -293,14 +296,15 @@ class TranscriptionTeeClient:
     Attributes:
         clients (list): the underlying Client instances responsible for handling WebSocket connections.
     """
-    def __init__(self, clients, save_output_recording=False, output_recording_filename="./output_recording.wav", mute_audio_playback=False):
+
+    def __init__(self, clients, save_output_recording=False, output_recording_filename="./output_recording.wav", mute_audio_playback=False, rate=8000):
         self.clients = clients
         if not self.clients:
             raise Exception("At least one client is required.")
         self.chunk = 4096
         self.format = pyaudio.paInt16
         self.channels = 1
-        self.rate = 8000
+        self.rate = rate
         self.record_seconds = 60000
         self.save_output_recording = save_output_recording
         self.output_recording_filename = output_recording_filename
@@ -407,14 +411,14 @@ class TranscriptionTeeClient:
                     if data == b"":
                         break
 
-                    #audio_array = self.bytes_to_float_array(data)
-                    #self.multicast_packet(audio_array.tobytes())
+                    # audio_array = self.bytes_to_float_array(data)
+                    # self.multicast_packet(audio_array.tobytes())
                     self.multicast_packet(data)
                     if self.mute_audio_playback:
                         time.sleep(chunk_duration)
                     else:
                         self.stream.write(data)
-    
+
                 wavfile.close()
 
                 for client in self.clients:
@@ -574,9 +578,9 @@ class TranscriptionTeeClient:
                 data = self.stream.read(self.chunk, exception_on_overflow=False)
                 self.frames += data
 
-                audio_array = self.bytes_to_float_array(data)
-
-                self.multicast_packet(audio_array.tobytes())
+                #audio_array = self.bytes_to_float_array(data)
+                #self.multicast_packet(audio_array.tobytes())
+                self.multicast_packet(data)
 
                 # save frames if more than a minute
                 if len(self.frames) > 60 * self.rate:
@@ -696,26 +700,28 @@ class TranscriptionClient(TranscriptionTeeClient):
         transcription_client()
         ```
     """
+
     def __init__(
-        self,
-        host,
-        port,
-        lang=None,
-        translate=False,
-        model="small",
-        use_vad=True,
-        save_output_recording=False,
-        output_recording_filename="./output_recording.wav",
-        output_transcription_path="./output.srt",
-        log_transcription=True,
-        max_clients=4,
-        max_connection_time=600,
-        mute_audio_playback=False,
+            self,
+            host,
+            port,
+            lang=None,
+            translate=False,
+            model="small",
+            use_vad=True,
+            save_output_recording=False,
+            output_recording_filename="./output_recording.wav",
+            output_transcription_path="./output.srt",
+            log_transcription=True,
+            max_clients=4,
+            max_connection_time=600,
+            mute_audio_playback=False,
+            rate=8000
     ):
         self.client = Client(
             host, port, lang, translate, model, srt_file_path=output_transcription_path,
             use_vad=use_vad, log_transcription=log_transcription, max_clients=max_clients,
-            max_connection_time=max_connection_time
+            max_connection_time=max_connection_time, rate=rate
         )
 
         if save_output_recording and not output_recording_filename.endswith(".wav"):
@@ -727,5 +733,6 @@ class TranscriptionClient(TranscriptionTeeClient):
             [self.client],
             save_output_recording=save_output_recording,
             output_recording_filename=output_recording_filename,
-            mute_audio_playback=mute_audio_playback
+            mute_audio_playback=mute_audio_playback,
+            rate=rate
         )
