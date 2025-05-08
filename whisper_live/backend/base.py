@@ -219,7 +219,7 @@ class ServeClientBase(object):
             self.websocket.send(
                 json_segment
             )
-            print(f'Send {json_segment}')
+            logging.info(f'Send {json_segment}')
 
         except Exception as e:
             logging.error(f"[ERROR]: Sending data to client: {e}")

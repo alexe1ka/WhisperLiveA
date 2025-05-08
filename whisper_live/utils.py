@@ -1,9 +1,23 @@
+import logging
 import os
 import textwrap
-import scipy
-import numpy as np
-import av
+import time
+from functools import wraps
 from pathlib import Path
+
+import av
+
+
+def measure_time(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        logging.info(f"[✅] Elapsed time: '{func.__name__}' in {end - start:.3f} seconds")
+        return result
+
+    return wrapper
 
 
 def clear_screen():

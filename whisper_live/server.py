@@ -7,6 +7,7 @@ from enum import Enum
 from typing import List, Optional
 
 import numpy as np
+from scipy.signal import resample
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.server import serve
 
@@ -143,7 +144,7 @@ class BackendType(Enum):
 
 
 class TranscriptionServer:
-    # RATE = 16000
+    TARGET_RATE = 16000
 
     def __init__(self):
         self.client_manager = None
@@ -245,14 +246,30 @@ class TranscriptionServer:
         """
         client = self.client_manager.get_client(websocket)
         rate = client.rate
-        print(f'Sample rate: {rate}')
+        # print(f'Sample rate: {rate}')
+
         frame_data = websocket.recv()
         # print(f'Recv frame {len(frame_data)}')
 
         if frame_data == b"END_OF_AUDIO":
             return False
-        return np.frombuffer(frame_data, dtype=np.int16).astype(np.float32) / 32768.0
-        # return np.frombuffer(frame_data, dtype=np.float32)
+        chunk = np.frombuffer(frame_data, dtype=np.int16).astype(np.float32) / 32768.0
+        logging.debug(f"Chunk len: {len(chunk)}")
+        if rate != self.TARGET_RATE:
+            chunk = self.resample_audio(chunk, rate)
+            logging.debug(f"After resampling chunk len: {len(chunk)}")
+
+        return chunk
+
+    def resample_audio(self, audio: np.ndarray, orig_sr: int) -> np.ndarray:
+        if orig_sr == self.TARGET_RATE:
+            return audio
+
+        duration = len(audio) / orig_sr
+        new_length = int(duration * self.TARGET_RATE)
+
+        resampled_audio = resample(audio, new_length).astype(np.float32)
+        return resampled_audio
 
     def handle_new_connection(self, websocket, faster_whisper_custom_model_path,
                               whisper_tensorrt_path, trt_multilingual):
