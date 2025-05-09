@@ -221,7 +221,7 @@ class TranscriptionServer:
                     vad_parameters=options.get("vad_parameters"),
                     use_vad=self.use_vad,
                     single_model=self.single_model,
-                    rate=options["rate"]
+                    rate=options.get("rate", 16000)
                 )
 
                 logging.info("Running faster_whisper backend.")
