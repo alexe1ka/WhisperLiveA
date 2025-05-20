@@ -11,6 +11,7 @@ from scipy.signal import resample
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.server import serve
 
+from whisper_live.audio_writer import AudioWriter
 from whisper_live.backend.base import ServeClientBase
 from whisper_live.vad import VoiceActivityDetector
 
@@ -151,12 +152,23 @@ class TranscriptionServer:
         self.no_voice_activity_chunks = 0
         self.use_vad = True
         self.single_model = False
+        self.audio_save_dir = "saved_audio"
+        if not os.path.exists(self.audio_save_dir):
+            os.makedirs(self.audio_save_dir)
+        self.audio_writer = AudioWriter()
 
     def initialize_client(
             self, websocket, options, faster_whisper_custom_model_path,
             whisper_tensorrt_path, trt_multilingual
     ):
         client: Optional[ServeClientBase] = None
+        self.save_audio = options.get("save_audio", False)
+        logging.info(f"Session with saving audio") if self.save_audio else None
+        
+        if self.save_audio:
+            client_uid = options["uid"]
+            rate = options.get("rate", 16000)  # Get rate from options or default to 16kHz
+            self.audio_writer.add_client(client_uid, rate)
 
         if self.backend.is_tensorrt():
             try:
@@ -246,18 +258,26 @@ class TranscriptionServer:
         """
         client = self.client_manager.get_client(websocket)
         rate = client.rate
-        # print(f'Sample rate: {rate}')
 
         frame_data = websocket.recv()
-        # print(f'Recv frame {len(frame_data)}')
 
         if frame_data == b"END_OF_AUDIO":
             return False
+            
         chunk = np.frombuffer(frame_data, dtype=np.int16).astype(np.float32) / 32768.0
         logging.debug(f"Chunk len: {len(chunk)}")
+        
+        # Save original audio if enabled
+        if self.save_audio:
+            self.audio_writer.write_audio(client.client_uid, chunk)
+            
         if rate != self.TARGET_RATE:
-            chunk = self.resample_audio(chunk, rate)
-            logging.debug(f"After resampling chunk len: {len(chunk)}")
+            resampled_chunk = self.resample_audio(chunk, rate)
+            logging.debug(f"After resampling chunk len: {len(resampled_chunk)}")
+            # Save resampled audio if enabled
+            if self.save_audio:
+                self.audio_writer.write_resampled(client.client_uid, resampled_chunk)
+            chunk = resampled_chunk
 
         return chunk
 
@@ -386,6 +406,11 @@ class TranscriptionServer:
         Args:
             host (str): The host address to bind the server.
             port (int): The port number to bind the server.
+            backend (str): The backend to use for transcription.
+            faster_whisper_custom_model_path (str): Path to custom faster whisper model.
+            whisper_tensorrt_path (str): Path to TensorRT model.
+            trt_multilingual (bool): Whether the TensorRT model is multilingual.
+            single_model (bool): Whether to use a single model instance.
         """
         if faster_whisper_custom_model_path is not None and not os.path.exists(faster_whisper_custom_model_path):
             raise ValueError(f"Custom faster_whisper model '{faster_whisper_custom_model_path}' is not a valid path.")
@@ -451,4 +476,13 @@ class TranscriptionServer:
             websocket: The websocket associated with the client to be cleaned up.
         """
         if self.client_manager.get_client(websocket):
+            client = self.client_manager.get_client(websocket)
+            # Clean up audio writer if needed
+            if self.save_audio:
+                self.audio_writer.remove_client(client.client_uid)
             self.client_manager.remove_client(websocket)
+
+    def __del__(self):
+        """Cleanup when server is destroyed"""
+        if hasattr(self, 'audio_writer'):
+            self.audio_writer.stop()
