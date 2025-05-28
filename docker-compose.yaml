@@ -1,0 +1,62 @@
+version: '2.3'
+
+x-environment: &environment
+  DEBUG: 1
+
+services:
+  asr:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gpu
+    image: whisperlive-a:0.0.4
+    restart: always
+    ports:
+      - 9099:9090
+    pull_policy: always
+    runtime: nvidia
+    environment:
+      <<: *environment
+      OMP_NUM_THREADS: 8
+    volumes:
+      - /home/Ubuntu:/model
+      - /home/anadezhkin/saved_audio:/app/saved_audio
+    command: python3 run_server.py --port 9090 --backend faster_whisper -fw "/model/whisper-uz-ct2"
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            device_ids: [ '0' ]
+            capabilities: [gpu]
+    shm_size: 64g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+  asr-trt:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.tensorrt
+    image: whisperlive-tensorrt:0.0.1
+    restart: always
+    ports:
+      - 9091:9090
+    pull_policy: always
+    runtime: nvidia
+    environment:
+      <<: *environment
+      OMP_NUM_THREADS: 8
+    volumes:
+      - /data/models/nlp/:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            device_ids: [ '1' ]
+            capabilities: [gpu]
+    shm_size: 64g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    command: bash
