@@ -1,15 +1,15 @@
 from whisper_live.client import TranscriptionClient
 
 host = 'localhost'
-host = '194.68.244.6'
-port = 9091
+host = '0.0.0.0'
+port = 9090
 
 client = TranscriptionClient(
     host,
     port,
-    lang="en",
+    lang="kk",
     translate=False,
-    model="small",
+    model="",
     use_vad=False,
     save_output_recording=True,
     output_recording_filename="./output_recording.wav",
