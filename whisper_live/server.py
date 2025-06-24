@@ -1,8 +1,9 @@
-import functools
-import json
-import logging
 import os
 import time
+import threading
+import json
+import functools
+import logging
 from enum import Enum
 from typing import List, Optional
 
@@ -158,13 +159,13 @@ class TranscriptionServer:
         self.audio_writer = AudioWriter()
 
     def initialize_client(
-            self, websocket, options, faster_whisper_custom_model_path,
-            whisper_tensorrt_path, trt_multilingual
+        self, websocket, options, faster_whisper_custom_model_path,
+        whisper_tensorrt_path, trt_multilingual, trt_py_session=False,
     ):
         client: Optional[ServeClientBase] = None
         self.save_audio = options.get("save_audio", False)
         logging.info(f"Session with saving audio") if self.save_audio else None
-        
+
         if self.save_audio:
             client_uid = options["uid"]
             rate = options.get("rate", 16000)  # Get rate from options or default to 16kHz
@@ -181,6 +182,11 @@ class TranscriptionServer:
                     client_uid=options["uid"],
                     model=whisper_tensorrt_path,
                     single_model=self.single_model,
+                    use_py_session=trt_py_session,
+                    send_last_n_segments=options.get("send_last_n_segments", 10),
+                    no_speech_thresh=options.get("no_speech_thresh", 0.45),
+                    clip_audio=options.get("clip_audio", False),
+                    same_output_threshold=options.get("same_output_threshold", 10),
                 )
                 logging.info("Running TensorRT backend.")
             except Exception as e:
@@ -204,6 +210,10 @@ class TranscriptionServer:
                     client_uid=options["uid"],
                     model=options["model"],
                     single_model=self.single_model,
+                    send_last_n_segments=options.get("send_last_n_segments", 10),
+                    no_speech_thresh=options.get("no_speech_thresh", 0.45),
+                    clip_audio=options.get("clip_audio", False),
+                    same_output_threshold=options.get("same_output_threshold", 10),
                 )
                 logging.info("Running OpenVINO backend.")
             except Exception as e:
@@ -233,6 +243,11 @@ class TranscriptionServer:
                     vad_parameters=options.get("vad_parameters"),
                     use_vad=self.use_vad,
                     single_model=self.single_model,
+                    send_last_n_segments=options.get("send_last_n_segments", 10),
+                    no_speech_thresh=options.get("no_speech_thresh", 0.45),
+                    clip_audio=options.get("clip_audio", False),
+                    same_output_threshold=options.get("same_output_threshold", 10),
+                    cache_path=self.cache_path,
                     rate=options.get("rate", 16000)
                 )
 
@@ -263,14 +278,14 @@ class TranscriptionServer:
 
         if frame_data == b"END_OF_AUDIO":
             return False
-            
+
         chunk = np.frombuffer(frame_data, dtype=np.int16).astype(np.float32) / 32768.0
         logging.debug(f"Chunk len: {len(chunk)}")
-        
+
         # Save original audio if enabled
         if self.save_audio:
             self.audio_writer.write_audio(client.client_uid, chunk)
-            
+
         if rate != self.TARGET_RATE:
             resampled_chunk = self.resample_audio(chunk, rate)
             logging.debug(f"After resampling chunk len: {len(resampled_chunk)}")
@@ -292,7 +307,7 @@ class TranscriptionServer:
         return resampled_audio
 
     def handle_new_connection(self, websocket, faster_whisper_custom_model_path,
-                              whisper_tensorrt_path, trt_multilingual):
+                              whisper_tensorrt_path, trt_multilingual, trt_py_session=False):
         try:
             logging.info("New client connected")
             options = websocket.recv()
@@ -312,7 +327,7 @@ class TranscriptionServer:
             if self.backend.is_tensorrt():
                 self.vad_detector = VoiceActivityDetector(frame_rate=self.RATE)
             self.initialize_client(websocket, options, faster_whisper_custom_model_path,
-                                   whisper_tensorrt_path, trt_multilingual)
+                                   whisper_tensorrt_path, trt_multilingual, trt_py_session=trt_py_session)
             return True
         except json.JSONDecodeError:
             logging.error("Failed to decode JSON from client")
@@ -348,7 +363,8 @@ class TranscriptionServer:
                    backend: BackendType = BackendType.FASTER_WHISPER,
                    faster_whisper_custom_model_path=None,
                    whisper_tensorrt_path=None,
-                   trt_multilingual=False):
+                   trt_multilingual=False,
+                   trt_py_session=False):
         """
         Receive audio chunks from a client in an infinite loop.
 
@@ -375,7 +391,7 @@ class TranscriptionServer:
         """
         self.backend = backend
         if not self.handle_new_connection(websocket, faster_whisper_custom_model_path,
-                                          whisper_tensorrt_path, trt_multilingual):
+                                          whisper_tensorrt_path, trt_multilingual, trt_py_session=trt_py_session):
             return
 
         try:
@@ -399,19 +415,17 @@ class TranscriptionServer:
             faster_whisper_custom_model_path=None,
             whisper_tensorrt_path=None,
             trt_multilingual=False,
-            single_model=False):
+            trt_py_session=False,
+            single_model=False,
+            cache_path="~/.cache/whisper-live/"):
         """
         Run the transcription server.
 
         Args:
             host (str): The host address to bind the server.
             port (int): The port number to bind the server.
-            backend (str): The backend to use for transcription.
-            faster_whisper_custom_model_path (str): Path to custom faster whisper model.
-            whisper_tensorrt_path (str): Path to TensorRT model.
-            trt_multilingual (bool): Whether the TensorRT model is multilingual.
-            single_model (bool): Whether to use a single model instance.
         """
+        self.cache_path = cache_path
         if faster_whisper_custom_model_path is not None and not os.path.exists(faster_whisper_custom_model_path):
             raise ValueError(f"Custom faster_whisper model '{faster_whisper_custom_model_path}' is not a valid path.")
         if whisper_tensorrt_path is not None and not os.path.exists(whisper_tensorrt_path):
@@ -426,15 +440,16 @@ class TranscriptionServer:
         if not BackendType.is_valid(backend):
             raise ValueError(f"{backend} is not a valid backend type. Choose backend from {BackendType.valid_types()}")
         with serve(
-                functools.partial(
-                    self.recv_audio,
-                    backend=BackendType(backend),
-                    faster_whisper_custom_model_path=faster_whisper_custom_model_path,
-                    whisper_tensorrt_path=whisper_tensorrt_path,
-                    trt_multilingual=trt_multilingual
-                ),
-                host,
-                port
+            functools.partial(
+                self.recv_audio,
+                backend=BackendType(backend),
+                faster_whisper_custom_model_path=faster_whisper_custom_model_path,
+                whisper_tensorrt_path=whisper_tensorrt_path,
+                trt_multilingual=trt_multilingual,
+                trt_py_session=trt_py_session,
+            ),
+            host,
+            port
         ) as server:
             server.serve_forever()
 

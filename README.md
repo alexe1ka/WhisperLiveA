@@ -3,6 +3,8 @@
 <h2 align="center">
   <a href="https://www.youtube.com/watch?v=0PHWCApIcCI"><img
 src="https://img.youtube.com/vi/0PHWCApIcCI/0.jpg" style="background-color:rgba(0,0,0,0);" height=300 alt="WhisperLive"></a>
+  <a href="https://www.youtube.com/watch?v=0f5oiG4oPWQ"><img
+  src="https://img.youtube.com/vi/0f5oiG4oPWQ/0.jpg" style="background-color:rgba(0,0,0,0);" height=300 alt="WhisperLive"></a>
   <br><br>A nearly-live implementation of OpenAI's Whisper.
 <br><br>
 </h2>
@@ -18,6 +20,7 @@ input from microphone and pre-recorded audio files.
 - [Browser Extensions](#browser-extensions)
 - [Whisper Live Server in Docker](#whisper-live-server-in-docker)
 - [Future Work](#future-work)
+- [Blog Posts](#blog-posts)
 - [Contact](#contact)
 - [Citations](#citations)
 
@@ -44,10 +47,11 @@ The server supports 3 backends `faster_whisper`, `tensorrt` and `openvino`. If r
 python3 run_server.py --port 9090 \
                       --backend faster_whisper
   
-# running with custom model
+# running with custom model and cache_dir to save auto-converted ctranslate2 models
 python3 run_server.py --port 9090 \
                       --backend faster_whisper \
                       -fw "/path/to/custom/faster/whisper/model"
+                      -c ~/.cache/whisper-live/
 ```
 
 - TensorRT backend. Currently, we recommend to only use the docker setup for TensorRT. Follow [TensorRT_whisper readme](https://github.com/collabora/WhisperLive/blob/main/TensorRT_whisper.md) which works as expected. Make sure to build your TensorRT Engines before running the server with TensorRT backend.
@@ -141,7 +145,7 @@ client(hls_url="http://as-hls-ww-live.akamaized.net/pool_904/live/ww/bbc_1xtra/b
 
 ## Browser Extensions
 - Run the server with your desired backend as shown [here](https://github.com/collabora/WhisperLive?tab=readme-ov-file#running-the-server).
-- Transcribe audio directly from your browser using our Chrome or Firefox extensions. Refer to [Audio-Transcription-Chrome](https://github.com/collabora/whisper-live/tree/main/Audio-Transcription-Chrome#readme) and [Audio-Transcription-Firefox](https://github.com/collabora/whisper-live/tree/main/Audio-Transcription-Firefox#readme) for setup instructions.
+- Transcribe audio directly from your browser using our Chrome or Firefox extensions. Refer to [Audio-Transcription-Chrome](https://github.com/collabora/whisper-live/tree/main/Audio-Transcription-Chrome#readme) and https://github.com/collabora/WhisperLive/blob/main/TensorRT_whisper.md
 
 ## Whisper Live Server in Docker
 - GPU
@@ -150,9 +154,10 @@ client(hls_url="http://as-hls-ww-live.akamaized.net/pool_904/live/ww/bbc_1xtra/b
   docker run -it --gpus all -p 9090:9090 ghcr.io/collabora/whisperlive-gpu:latest
   ```
 
-  - TensorRT. 
+  - TensorRT. Refer to [TensorRT_whisper readme](https://github.com/collabora/WhisperLive/blob/main/TensorRT_whisper.md) for setup and more tensorrt backend configurations.
   ```bash
-  docker run -p 9090:9090 --runtime=nvidia --gpus all --entrypoint /bin/bash -it ghcr.io/collabora/whisperlive-tensorrt
+  docker build . -f docker/Dockerfile.tensorrt -t whisperlive-tensorrt
+  docker run -p 9090:9090 --runtime=nvidia --entrypoint /bin/bash -it whisperlive-tensorrt
 
   # Build small.en engine
   bash build_whisper_tensorrt.sh /app/TensorRT-LLM-examples small.en        # float16
@@ -178,14 +183,18 @@ client(hls_url="http://as-hls-ww-live.akamaized.net/pool_904/live/ww/bbc_1xtra/b
   docker run -it -p 9090:9090 ghcr.io/collabora/whisperlive-cpu:latest
   ```
 
-**Note**: By default we use "small" model size. To build docker image for a different model size, change the size in server.py and then build the docker image.
-
 ## Future Work
 - [ ] Add translation to other languages on top of transcription.
+
+## Blog Posts
+- [Transforming speech technology with WhisperLive](https://www.collabora.com/news-and-blog/blog/2024/05/28/transforming-speech-technology-with-whisperlive/)
+- [WhisperFusion: Ultra-low latency conversations with an AI chatbot](https://www.collabora.com/news-and-blog/news-and-events/whisperfusion-ultra-low-latency-conversations-with-an-ai-chatbot.html) powered by WhisperLive
+- [Breaking language barriers 2.0: Moving closer towards fully reliable, production-ready Hindi ASR](https://www.collabora.com/news-and-blog/news-and-events/breaking-language-barriers-20-moving-closer-production-ready-hindi-asr.html) which is used in WhisperLive for hindi.
 
 ## Contact
 
 We are available to help you with both Open Source and proprietary AI projects. You can reach us via the Collabora website or [vineet.suryan@collabora.com](mailto:vineet.suryan@collabora.com) and [marcus.edel@collabora.com](mailto:marcus.edel@collabora.com).
+
 
 ## Citations
 ```bibtex

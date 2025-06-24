@@ -1,19 +1,38 @@
+import os
 import json
 import logging
 import threading
-
+import time
 import torch
+import ctranslate2
+from huggingface_hub import snapshot_download
 
-from whisper_live.backend.base import ServeClientBase
 from whisper_live.transcriber.transcriber_faster_whisper import WhisperModel
-
+from whisper_live.backend.base import ServeClientBase
 
 class ServeClientFasterWhisper(ServeClientBase):
     SINGLE_MODEL = None
     SINGLE_MODEL_LOCK = threading.Lock()
 
-    def __init__(self, websocket, task="transcribe", device=None, language=None, client_uid=None, model="small.en",
-                 initial_prompt=None, vad_parameters=None, use_vad=True, single_model=False, rate=8000):
+    def __init__(
+        self,
+        websocket,
+        task="transcribe",
+        device=None,
+        language=None,
+        client_uid=None,
+        model="small.en",
+        initial_prompt=None,
+        vad_parameters=None,
+        use_vad=True,
+        single_model=False,
+        send_last_n_segments=10,
+        no_speech_thresh=0.45,
+        clip_audio=False,
+        same_output_threshold=10,
+        cache_path="~/.cache/whisper-live/",
+        rate=8000
+    ):
         """
         Initialize a ServeClient instance.
         The Whisper model is initialized based on the client's language and device availability.
@@ -22,16 +41,29 @@ class ServeClientFasterWhisper(ServeClientBase):
 
         Args:
             websocket (WebSocket): The WebSocket connection for the client.
-            task (str, optional): The task type, e.g., "transcribe." Defaults to "transcribe".
+            task (str, optional): The task type, e.g., "transcribe". Defaults to "transcribe".
             device (str, optional): The device type for Whisper, "cuda" or "cpu". Defaults to None.
             language (str, optional): The language for transcription. Defaults to None.
             client_uid (str, optional): A unique identifier for the client. Defaults to None.
             model (str, optional): The whisper model size. Defaults to 'small.en'
             initial_prompt (str, optional): Prompt for whisper inference. Defaults to None.
             single_model (bool, optional): Whether to instantiate a new model for each client connection. Defaults to False.
+            send_last_n_segments (int, optional): Number of most recent segments to send to the client. Defaults to 10.
+            no_speech_thresh (float, optional): Segments with no speech probability above this threshold will be discarded. Defaults to 0.45.
+            clip_audio (bool, optional): Whether to clip audio with no valid segments. Defaults to False.
+            same_output_threshold (int, optional): Number of repeated outputs before considering it as a valid segment. Defaults to 10.
+
         """
-        super().__init__(client_uid, websocket)
+        super().__init__(
+            client_uid,
+            websocket,
+            send_last_n_segments,
+            no_speech_thresh,
+            clip_audio,
+            same_output_threshold,
+        )
         self.rate = rate
+        self.cache_path = cache_path
         self.model_sizes = [
             "tiny", "tiny.en", "base", "base.en", "small", "small.en",
             "medium", "medium.en", "large-v2", "large-v3", "distil-small.en",
@@ -44,9 +76,6 @@ class ServeClientFasterWhisper(ServeClientBase):
         self.task = task
         self.initial_prompt = initial_prompt
         self.vad_parameters = vad_parameters or {"onset": 0.5}
-
-        self.same_output_threshold = 10
-        self.end_time_for_same_output = None
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         if device == "cuda":
@@ -96,37 +125,50 @@ class ServeClientFasterWhisper(ServeClientBase):
 
     def create_model(self, device):
         """
-        Instantiates a new model, sets it as the transcriber.
+        Instantiates a new model, sets it as the transcriber. If model is a huggingface model_id
+        then it is automatically converted to ctranslate2(faster_whisper) format.
         """
+        model_ref = self.model_size_or_path
+
+        if model_ref in self.model_sizes:
+            model_to_load = model_ref
+        else:
+            logging.info(f"Model not in model_sizes")
+            if os.path.isdir(model_ref) and ctranslate2.contains_model(model_ref):
+                model_to_load = model_ref
+            else:
+                local_snapshot = snapshot_download(
+                    repo_id = model_ref,
+                    repo_type = "model",
+                )
+                if ctranslate2.contains_model(local_snapshot):
+                    model_to_load = local_snapshot
+                else:
+                    cache_root = os.path.expanduser(os.path.join(self.cache_path, "whisper-ct2-models/"))
+                    os.makedirs(cache_root, exist_ok=True)
+                    safe_name = model_ref.replace("/", "--")
+                    ct2_dir = os.path.join(cache_root, safe_name)
+
+                    if not ctranslate2.contains_model(ct2_dir):
+                        logging.info(f"Converting '{model_ref}' to CTranslate2 @ {ct2_dir}")
+                        ct2_converter = ctranslate2.converters.TransformersConverter(
+                            local_snapshot,
+                            copy_files=["tokenizer.json", "preprocessor_config.json"]
+                        )
+                        ct2_converter.convert(
+                            output_dir=ct2_dir,
+                            quantization=self.compute_type,
+                            force=False,  # skip if already up-to-date
+                        )
+                    model_to_load = ct2_dir
+
+        logging.info(f"Loading model: {model_to_load}")
         self.transcriber = WhisperModel(
-            self.model_size_or_path,
+            model_to_load,
             device=device,
             compute_type=self.compute_type,
             local_files_only=False,
         )
-
-    def check_valid_model(self, model_size):
-        """
-        Check if it's a valid whisper model size.
-
-        Args:
-            model_size (str): The name of the model size to check.
-
-        Returns:
-            str: The model size if valid, None otherwise.
-        """
-        if model_size not in self.model_sizes:
-            self.websocket.send(
-                json.dumps(
-                    {
-                        "uid": self.client_uid,
-                        "status": "ERROR",
-                        "message": f"Invalid model size {model_size}. Available choices: {self.model_sizes}"
-                    }
-                )
-            )
-            return None
-        return model_size
 
     def set_language(self, info):
         """
